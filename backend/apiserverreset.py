@@ -1,5 +1,3 @@
-# api_server.py - FastAPI Server with MCP Integration
-
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -15,16 +13,14 @@ logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
-# Add this middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"], # Allow Next.js frontend
+    allow_origins=["http://localhost:3000"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# Global assistant instance
 assistant = None
 
 @asynccontextmanager
@@ -32,33 +28,26 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan - initialize and cleanup"""
     global assistant
     try:
-        logger.info("=" * 60)
-        logger.info("🚀 Initializing MCP AI Assistant...")
-        logger.info("=" * 60)
         assistant = MCPAIAssistant()
         await assistant.initialize()
-        logger.info("✅ MCP AI Assistant ready!")
-        logger.info(f"📊 Connected with {len(assistant.tools)} tools")
+        
         yield
     except Exception as e:
-        logger.error(f"❌ Failed to initialize: {e}")
-        logger.error("Make sure mcpserver.py is running first!")
+        logger.error(f"Failed to initialize: {e}")
         yield
     finally:
-        logger.info("=" * 60)
-        logger.info("🛑 Shutting down MCP AI Assistant...")
+        
         if assistant:
             try:
                 await assistant.close()
-                logger.info("✅ Cleanup complete!")
+                
             except Exception as e:
                 logger.error(f"Error during cleanup: {e}")
-        logger.info("=" * 60)
 
-# Create FastAPI app with lifespan
+
 app = FastAPI(title="MCP AI Assistant API", lifespan=lifespan)
 
-# Add CORS middleware
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -67,7 +56,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ===== PYDANTIC MODELS (MUST BE BEFORE ENDPOINTS) =====
+
 
 class ChatRequest(BaseModel):
     message: str
@@ -79,7 +68,7 @@ class ResetResponse(BaseModel):
     status: str
     message: str
 
-# ===== API ENDPOINTS =====
+
 
 @app.get("/")
 async def root():
@@ -94,44 +83,40 @@ async def root():
 async def chat(request: ChatRequest):
     """Chat endpoint - process user messages"""
     if not assistant:
-        logger.error("❌ Assistant not initialized")
+        logger.error(" Assistant not initialized")
         raise HTTPException(503, "Assistant not ready")
     
     try:
-        logger.info(f"💬 Processing: {request.message[:50]}...")
+        logger.info(f"Processing: {request.message[:50]}...")
         response = await assistant.chat(request.message)
-        logger.info(f"✅ Response generated ({len(response)} chars)")
+        logger.info(f"Response generated ({len(response)} chars)")
         return ChatResponse(response=response)
     except Exception as e:
-        logger.error(f"❌ Chat error: {e}", exc_info=True)
+        logger.error(f" Chat error: {e}", exc_info=True)
         raise HTTPException(500, f"Error: {str(e)}")
 
 @app.post("/reset", response_model=ResetResponse)
 async def reset_conversation():
     """Reset endpoint - clears conversation state and starts fresh"""
     if not assistant:
-        logger.error("❌ Assistant not initialized for reset")
+        logger.error("Assistant not initialized for reset")
         raise HTTPException(503, "Assistant not ready")
     
     try:
-        logger.info("=" * 60)
-        logger.info("🔄 RESETTING CONVERSATION STATE...")
-        logger.info("=" * 60)
         
-        # Call the reset() method from clientreset.py
+        
+        
         assistant.reset()
+
+        logger.info("Ready for fresh conversation")
         
-        logger.info("✅ Conversation history cleared")
-        logger.info("✅ Workflow memory reset to IDLE state")
-        logger.info("✅ Ready for fresh conversation")
-        logger.info("=" * 60)
         
         return ResetResponse(
             status="success",
             message="Conversation reset successfully. Starting fresh."
         )
     except Exception as e:
-        logger.error(f"❌ Reset error: {e}", exc_info=True)
+        logger.error(f"Reset error: {e}", exc_info=True)
         logger.error("Failed to reset assistant state")
         raise HTTPException(500, f"Reset failed: {str(e)}")
 
@@ -165,7 +150,5 @@ async def list_tools():
 
 if __name__ == "__main__":
     import uvicorn
-    logger.info("=" * 60)
-    logger.info("🎯 Starting MCP API Server...")
-    logger.info("=" * 60)
+    
     uvicorn.run(app, host="0.0.0.0", port=8001)
