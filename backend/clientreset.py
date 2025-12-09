@@ -13,13 +13,13 @@ class WorkflowState:
     IDLE = "idle"
     ORG_NEEDED = "org_needed"
     PROCESS_NEEDED = "process_needed"
-    PROCESS_CREATION_CONFIRM = "process_creation_confirm"  # NEW
+    PROCESS_CREATION_CONFIRM = "process_creation_confirm"  
     EVENT_NEEDED = "event_needed"
     PAGE_TITLE_NEEDED = "page_title_needed"
     FIELDS_NEEDED = "fields_needed"
-    FIELD_CREATION_CONFIRM = "field_creation_confirm"  # NEW
-    FIELD_DISPLAY_TYPE = "field_display_type"  # NEW
-    FIELD_VALIDATION_TYPE = "field_validation_type"  # NEW
+    FIELD_CREATION_CONFIRM = "field_creation_confirm"  
+    FIELD_DISPLAY_TYPE = "field_display_type"  
+    FIELD_VALIDATION_TYPE = "field_validation_type"  
     SQL_GENERATION = "sql_generation"
     COMPLETE = "complete"
 
@@ -31,7 +31,7 @@ class WorkflowMemory:
         self.process_id: Optional[int] = None
         self.process_name: Optional[str] = None
         self.is_new_process: bool = False
-        self.suggested_process_id: Optional[int] = None  # NEW
+        self.suggested_process_id: Optional[int] = None  
         self.event_id: Optional[int] = None
         self.page_id: Optional[int] = None
         self.page_title: Optional[str] = None
@@ -39,15 +39,13 @@ class WorkflowMemory:
         self.group_id: int = 1
         self.fields: List[Dict[str, Any]] = []
         self.current_state: str = WorkflowState.IDLE
-        
-        # NEW: For field creation workflow
         self.pending_field_id: Optional[str] = None
         self.pending_display_type: Optional[str] = None
         self.pending_validation_type: Optional[str] = None
 
     def get_summary(self) -> str:
         """Get human-readable summary of collected data"""
-        summary = [f"📋 Current State: {self.current_state}"]
+        summary = [f" Current State: {self.current_state}"]
         if self.org_id:
             summary.append(f"  Organization: {self.org_name} (ID: {self.org_id})")
         if self.process_id:
@@ -78,7 +76,6 @@ class MCPAIAssistant:
         self.allowed_tools = {
             "get_organization_by_name",
             "get_process_by_name",
-            "debug_process_query",
             "get_events_for_process",
             "check_field_exists",
             "generate_page_url",
@@ -86,7 +83,7 @@ class MCPAIAssistant:
             "validate_workflow_data",
             "get_field_validation_types",
             "get_field_display_types",
-            "get_max_process_id",  # NEW: For process creation
+            "get_max_process_id", 
         }
 
     async def initialize(self):
@@ -105,16 +102,16 @@ class MCPAIAssistant:
                 tool for tool in all_server_tools
                 if tool.name in self.allowed_tools
             ]
-            print(f"✅ Connected to MCP server with {len(self.tools)} tools")
+            print(f" Connected to MCP server with {len(self.tools)} tools")
         except Exception as e:
-            print(f"❌ Failed to connect to MCP server: {e}")
+            print(f" Failed to connect to MCP server: {e}")
             raise
 
     def reset(self):
         """Reset conversation state and memory - NEW METHOD"""
         self.memory = WorkflowMemory()
         self.conversation_history = []
-        print("🔄 Assistant state reset - starting fresh conversation")
+        print(" Assistant state reset - starting fresh conversation")
         
     def _get_state_context(self) -> Dict[str, Any]:
         """Get context for current state to guide LLM"""
@@ -138,7 +135,7 @@ class MCPAIAssistant:
             context["next_action"] = "get_process"
             context["required_tool"] = "get_process_by_name"
             context["prompt_instruction"] = "Ask for process name. MUST check if process exists in database."
-        elif state == WorkflowState.PROCESS_CREATION_CONFIRM:  # NEW
+        elif state == WorkflowState.PROCESS_CREATION_CONFIRM:
             context["next_action"] = "confirm_process_creation"
             context["prompt_instruction"] = "Ask if user wants to create new process"
         elif state == WorkflowState.EVENT_NEEDED:
@@ -153,13 +150,13 @@ class MCPAIAssistant:
             context["next_action"] = "collect_fields"
             context["required_tool"] = "check_field_exists"
             context["prompt_instruction"] = "Ask for field IDs. User can say 'done' when finished."
-        elif state == WorkflowState.FIELD_CREATION_CONFIRM:  # NEW
+        elif state == WorkflowState.FIELD_CREATION_CONFIRM:  
             context["next_action"] = "confirm_field_creation"
             context["prompt_instruction"] = "Ask if user wants to create new field"
-        elif state == WorkflowState.FIELD_DISPLAY_TYPE:  # NEW
+        elif state == WorkflowState.FIELD_DISPLAY_TYPE:  
             context["next_action"] = "get_display_type"
             context["prompt_instruction"] = "Ask for display type (label/checkbox/radio/textarea/select/date)"
-        elif state == WorkflowState.FIELD_VALIDATION_TYPE:  # NEW
+        elif state == WorkflowState.FIELD_VALIDATION_TYPE:  
             context["next_action"] = "get_validation_type"
             context["prompt_instruction"] = "Ask for validation type (E/N/M/NM/A/AN)"
         elif state == WorkflowState.SQL_GENERATION:
@@ -181,7 +178,6 @@ class MCPAIAssistant:
             "action_taken": None
         }
 
-        # IDLE STATE
         if state == WorkflowState.IDLE:
             if any(phrase in user_input.lower() for phrase in ["create", "form", "page", "build", "yes"]):
                 self.memory.current_state = WorkflowState.ORG_NEEDED
@@ -189,10 +185,9 @@ class MCPAIAssistant:
                 result["next_state"] = WorkflowState.ORG_NEEDED
                 result["action_taken"] = "workflow_started"
 
-        # ORG_NEEDED STATE
         elif state == WorkflowState.ORG_NEEDED:
             if user_input.lower() not in ["yes", "ok", "sure", "proceed", "start"]:
-                # Call tool
+                
                 tool_result = await self._call_tool("get_organization_by_name", {"legal_name": user_input})
                 result_data = json.loads(tool_result)
                 result["tool_called"] = True
@@ -210,10 +205,8 @@ class MCPAIAssistant:
                 else:
                     result["action_taken"] = "organization_not_found"
 
-        # PROCESS_NEEDED STATE - ENHANCED WITH NEW PROCESS CREATION
         elif state == WorkflowState.PROCESS_NEEDED:
             if user_input.lower() not in ["ok", "next", "continue", "proceed"]:
-                # User provided a process name - look it up
                 tool_result = await self._call_tool("get_process_by_name", {
                     "process_name": user_input,
                     "org_id": self.memory.org_id
@@ -224,7 +217,7 @@ class MCPAIAssistant:
                 result["tool_result"] = tool_result
 
                 if result_data.get("found"):
-                    # EXISTING PROCESS FOUND
+
                     self.memory.process_id = int(result_data.get("processId"))
                     self.memory.process_name = result_data.get("processName")
                     self.memory.is_new_process = False
@@ -232,10 +225,8 @@ class MCPAIAssistant:
                     result["state_changed"] = True
                     result["next_state"] = WorkflowState.EVENT_NEEDED
                     result["action_taken"] = "process_found"
-                    print(f"[MEMORY] ✓ Stored process: {self.memory.process_name} (ID: {self.memory.process_id})")
+                    print(f"[MEMORY]  Stored process: {self.memory.process_name} (ID: {self.memory.process_id})")
                 else:
-                    # NEW: PROCESS NOT FOUND - ASK TO CREATE
-                    # Get max process ID to suggest next ID
                     max_id_tool = await self._call_tool("get_max_process_id", {})
                     max_id_data = json.loads(max_id_tool)
                     
@@ -259,16 +250,12 @@ class MCPAIAssistant:
             else:
                 result["action_taken"] = "ask_for_process_name"
 
-        # NEW: PROCESS_CREATION_CONFIRM STATE
         elif state == WorkflowState.PROCESS_CREATION_CONFIRM:
             user_lower = user_input.lower().strip()
             
             if any(word in user_lower for word in ["yes", "y", "create", "ok", "sure", "proceed"]):
-                # USER CONFIRMS NEW PROCESS CREATION
                 self.memory.is_new_process = True
                 self.memory.process_id = self.memory.suggested_process_id
-                
-                # Use new process ID for both event and page
                 self.memory.event_id = self.memory.process_id
                 self.memory.page_id = self.memory.process_id
                 
@@ -281,7 +268,6 @@ class MCPAIAssistant:
                 print(f"[MEMORY] ✓ New process confirmed: '{self.memory.process_name}' (ID: {self.memory.process_id})")
             
             elif any(word in user_lower for word in ["no", "n", "wrong", "cancel", "retry"]):
-                # USER SAYS NO - PROCESS NAME WAS WRONG
                 self.memory.process_name = None
                 self.memory.suggested_process_id = None
                 
@@ -291,13 +277,10 @@ class MCPAIAssistant:
                 result["action_taken"] = "process_name_retry"
                 print(f"[MEMORY] Process name was wrong, asking again")
             else:
-                # UNCLEAR RESPONSE
+                
                 result["action_taken"] = "unclear_process_response"
 
-        # EVENT_NEEDED STATE - SKIP FOR NEW PROCESS (already set)
         elif state == WorkflowState.EVENT_NEEDED:
-            # For new process, event_id and page_id are already set to process_id
-            # For existing process, get next event ID
             if not self.memory.is_new_process:
                 tool_result = await self._call_tool("get_events_for_process", {
                     "process_id": self.memory.process_id,
@@ -318,10 +301,8 @@ class MCPAIAssistant:
             result["next_state"] = WorkflowState.PAGE_TITLE_NEEDED
             result["action_taken"] = "event_id_retrieved"
 
-        # PAGE_TITLE_NEEDED STATE
         elif state == WorkflowState.PAGE_TITLE_NEEDED:
             if user_input.lower() not in ["ok", "next", "continue", "proceed"]:
-                # User provided a page title
                 tool_result = await self._call_tool("generate_page_url", {"page_title": user_input})
                 result_data = json.loads(tool_result)
                 result["tool_called"] = True
@@ -339,7 +320,6 @@ class MCPAIAssistant:
             else:
                 result["action_taken"] = "ask_for_page_title"
 
-        # FIELDS_NEEDED STATE - ENHANCED WITH NEW FIELD CREATION
         elif state == WorkflowState.FIELDS_NEEDED:
             if user_input.lower() in ["done", "finish", "complete", "no more fields"]:
                 if len(self.memory.fields) == 0:
@@ -353,7 +333,6 @@ class MCPAIAssistant:
             elif user_input.lower() in ["ok", "next", "continue", "proceed"]:
                 result["action_taken"] = "ask_for_fields"
             else:
-                # User provided a field ID - check if it exists
                 tool_result = await self._call_tool("check_field_exists", {"field_id": user_input})
                 result_data = json.loads(tool_result)
                 result["tool_called"] = True
@@ -361,7 +340,6 @@ class MCPAIAssistant:
                 result["tool_result"] = tool_result
 
                 if result_data.get("found"):
-                    # EXISTING FIELD
                     self.memory.fields.append({
                         "field_id": result_data.get("fieldId"),
                         "existing": True,
@@ -373,7 +351,6 @@ class MCPAIAssistant:
                     result["field_id"] = result_data.get("fieldId")
                     print(f"[MEMORY] ✓ Added existing field: {result_data.get('fieldId')}")
                 else:
-                    # NEW: FIELD NOT FOUND - ASK TO CREATE
                     self.memory.pending_field_id = user_input
                     
                     self.memory.current_state = WorkflowState.FIELD_CREATION_CONFIRM
@@ -382,13 +359,10 @@ class MCPAIAssistant:
                     result["action_taken"] = "field_not_found_ask_create"
                     result["field_id"] = user_input
                     print(f"[MEMORY] Field '{user_input}' not found. Asking to create.")
-
-        # NEW: FIELD_CREATION_CONFIRM STATE
         elif state == WorkflowState.FIELD_CREATION_CONFIRM:
             user_lower = user_input.lower().strip()
             
             if any(word in user_lower for word in ["yes", "y", "create", "ok", "sure"]):
-                # USER CONFIRMS NEW FIELD CREATION
                 self.memory.current_state = WorkflowState.FIELD_DISPLAY_TYPE
                 result["state_changed"] = True
                 result["next_state"] = WorkflowState.FIELD_DISPLAY_TYPE
@@ -396,19 +370,15 @@ class MCPAIAssistant:
                 print(f"[MEMORY] User confirmed creating field: {self.memory.pending_field_id}")
             
             elif any(word in user_lower for word in ["no", "n", "cancel", "skip"]):
-                # USER SAYS NO - SKIP THIS FIELD
                 self.memory.pending_field_id = None
-                
                 self.memory.current_state = WorkflowState.FIELDS_NEEDED
                 result["state_changed"] = True
                 result["next_state"] = WorkflowState.FIELDS_NEEDED
                 result["action_taken"] = "field_creation_cancelled"
                 print(f"[MEMORY] Field creation cancelled")
             else:
-                # UNCLEAR RESPONSE
                 result["action_taken"] = "unclear_field_response"
 
-        # NEW: FIELD_DISPLAY_TYPE STATE
         elif state == WorkflowState.FIELD_DISPLAY_TYPE:
             valid_types = ["label", "checkbox", "radio", "textarea", "select", "date"]
             user_lower = user_input.lower().strip()
@@ -426,13 +396,9 @@ class MCPAIAssistant:
                 result["action_taken"] = "invalid_display_type"
                 result["valid_types"] = valid_types
 
-        # NEW: FIELD_VALIDATION_TYPE STATE
         elif state == WorkflowState.FIELD_VALIDATION_TYPE:
-            # Accept any validation type code
             validation_type = user_input.strip().upper()
             self.memory.pending_validation_type = validation_type
-            
-            # Add complete field to memory
             self.memory.fields.append({
                 "field_id": self.memory.pending_field_id,
                 "existing": False,
@@ -442,22 +408,17 @@ class MCPAIAssistant:
             
             result["field_id"] = self.memory.pending_field_id
             result["field_count"] = len(self.memory.fields)
-            
-            # Clear pending data
             self.memory.pending_field_id = None
             self.memory.pending_display_type = None
             self.memory.pending_validation_type = None
             
-            # Go back to collecting fields
             self.memory.current_state = WorkflowState.FIELDS_NEEDED
             result["state_changed"] = True
             result["next_state"] = WorkflowState.FIELDS_NEEDED
             result["action_taken"] = "field_added_new"
             print(f"[MEMORY] ✓ Added new field: {result['field_id']}")
 
-        # SQL_GENERATION STATE - ENHANCED WITH NEW PROCESS/FIELD SUPPORT
         elif state == WorkflowState.SQL_GENERATION:
-            # Separate existing and new fields
             existing_fields = [f for f in self.memory.fields if f.get("existing")]
             new_fields = [f for f in self.memory.fields if not f.get("existing")]
 
@@ -466,7 +427,7 @@ class MCPAIAssistant:
                 "org_name": self.memory.org_name,
                 "process_id": self.memory.process_id,
                 "process_name": self.memory.process_name,
-                "is_new_process": self.memory.is_new_process,  # CRITICAL FLAG
+                "is_new_process": self.memory.is_new_process,  
                 "event_id": self.memory.event_id,
                 "page_id": self.memory.page_id,
                 "page_title": self.memory.page_title,
@@ -475,7 +436,7 @@ class MCPAIAssistant:
                 "group_id": self.memory.group_id,
                 "is_new_group": False,
                 "field_groups": [],
-                "new_fields": new_fields,  # NEW FIELDS FOR adminFields
+                "new_fields": new_fields,  
                 "page_values": [
                     {
                         "field_id": field["field_id"],
@@ -485,7 +446,7 @@ class MCPAIAssistant:
                         "display_type": field.get("display_type", "label"),
                         "validation_type": field.get("validation_type", "E")
                     }
-                    for field in self.memory.fields  # ALL FIELDS
+                    for field in self.memory.fields 
                 ]
             }
 
@@ -508,7 +469,6 @@ class MCPAIAssistant:
         if not self.session:
             await self.initialize()
 
-        # Handle special commands
         if user_input.lower() in ["show memory", "show state", "status"]:
             return self.memory.get_summary()
         
@@ -516,13 +476,10 @@ class MCPAIAssistant:
             return f"The process ID for '{self.memory.process_name}' is: {self.memory.process_id}"
 
         try:
-            # Get current state context
             context = self._get_state_context()
             
-            # Execute state machine logic (tools, state transitions)
             state_result = await self._execute_state_logic(user_input, context)
             
-            # CRITICAL FIX: If SQL was generated, return it directly without LLM
             action_taken = state_result.get('action_taken')
             if action_taken == "sql_generated":
                 tool_result = state_result.get('tool_result')
@@ -531,11 +488,9 @@ class MCPAIAssistant:
                 else:
                     return "Error: SQL generation failed - no result returned"
             
-            # Build prompt for LLM with state context
             field_id = state_result.get('field_id', 'unknown')
             field_count = len(self.memory.fields)
             
-            # NEW: Extended system prompt with new actions
             system_prompt = f"""You are a helpful assistant for form page creation.
 
 CURRENT STATE: {context['current_state']}
@@ -587,11 +542,9 @@ Extract exact values from tool_result and provide clear response."""
                 HumanMessage(content=user_input)
             ]
             
-            # Let LLM generate the response
             response = await self.llm.ainvoke(messages)
             response_text = response.content
             
-            # Update history
             self.conversation_history.append(HumanMessage(content=user_input))
             self.conversation_history.append(AIMessage(content=response_text))
             
@@ -614,21 +567,12 @@ Extract exact values from tool_result and provide clear response."""
         """Close MCP connection"""
         await self.exit_stack.aclose()
 
-async def main():
-    print("=" * 60)
-    print("🚀 Form Page Creation Assistant (HYBRID MODE)")
-    print("=" * 60)
-    
+async def main():    
     assistant = MCPAIAssistant()
     await assistant.initialize()
-    
-    print("\n✅ Ready! State machine controls workflow, LLM generates responses.")
-    print("💡 Type 'show memory' to see collected data")
-    print("💡 Type 'quit' to exit\n")
-    
     try:
         while True:
-            user_input = input("👤 You: ")
+            user_input = input(" You: ")
             
             if user_input.lower() in ['quit', 'exit', 'q']:
                 break
@@ -637,14 +581,10 @@ async def main():
                 continue
             
             response = await assistant.chat(user_input)
-            print(f"\n🤖 Assistant: {response}\n")
-            
-            # Show current state
+            print(f"\n Assistant: {response}\n")
             print(f"[State: {assistant.memory.current_state}]\n")
-    
     finally:
         await assistant.close()
-        print("\n👋 Goodbye!")
 
 if __name__ == "__main__":
     asyncio.run(main())
