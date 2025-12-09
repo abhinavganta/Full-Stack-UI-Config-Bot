@@ -1,5 +1,3 @@
-# mcp_server.py - Fixed version with better error handling
-
 from fastmcp import FastMCP
 import httpx
 from datetime import datetime, date
@@ -18,12 +16,7 @@ if not Database_URL:
 print(f"Using database URI: {Database_URL}")
 org_engine = create_engine(Database_URL)
 
-# Create MCP server with FastMCP
 mcp = FastMCP("MCP Server")
-
-# =============================
-# SQL GENERATION WITH JINJA2
-# =============================
 
 def sql_escape(value):
     """Escape single quotes for SQL strings"""
@@ -35,19 +28,12 @@ def generate_sql_statements(form_data: dict) -> str:
     """Generate complete SQL INSERT statements using Jinja2 templates"""
     today = date.today().isoformat()
     output = []
-    
-    # Header
-    output.append("=" * 80)
-    output.append("FORM PAGE CREATION - SQL STATEMENTS")
-    output.append("=" * 80)
     output.append(f"Organization: {form_data.get('org_name')} (orgId: {form_data.get('org_id')})")
     output.append(f"Process: {form_data.get('process_name')} (processId: {form_data.get('process_id')})")
     output.append(f"Page: {form_data.get('page_title')} (pageId: {form_data.get('page_id')})")
     output.append("")
     
-    # 1. orgProcesses (if new process)
-    # FIXED: Columns and values now match orgProcesses schema (image_ef0ac5.png)
-    # Omitted auto-increment recordId
+
     if form_data.get('is_new_process'):
         template = Template("""
 INSERT INTO orgProcesses (
@@ -67,9 +53,7 @@ INSERT INTO orgProcesses (
         ))
         output.append("")
     
-    # 2. orgProcessEvents
-    # FIXED: Columns and values now match orgProcessEvents schema (image_ef0dcf.png)
-    # Omitted auto-increment recordId. Added isMenu, showMenu, displaySeq, dataStatus.
+
     template = Template("""
 INSERT INTO orgProcessEvents (
     recSeq, orgId, recStatus, dataStatus, processId, eventId, eventName, eventGroupCode, pageId, eventProcessingFile, 
@@ -89,10 +73,7 @@ INSERT INTO orgProcessEvents (
         today=today
     ))
     output.append("")
-    
-    # 3. adminPages
-    # FIXED: Columns and values now match adminPages schema (image_ef0e26.png)
-    # Kept pageId insertion as client logic requires it. Added recStatus. Removed fromDate, endDate.
+
     template = Template("""
 INSERT INTO adminPages (
     pageId, recStatus, pageURL, pageTitle, pageDisplayName, processId, eventId, pageType, 
@@ -111,9 +92,7 @@ INSERT INTO adminPages (
     ))
     output.append("")
     
-    # 4. adminFormGroups (if new group)
-    # FIXED: Columns and values now match adminFormGroups schema (image_ef0e81.png)
-    # Kept groupId insertion. Added recStatus, displaySeq. Removed fromDate, endDate.
+
     if form_data.get('is_new_group'):
         template = Template("""
 INSERT INTO adminFormGroups (
@@ -129,10 +108,7 @@ INSERT INTO adminFormGroups (
             today=today
         ))
         output.append("")
-    
-    # 5. adminFieldGroups (if custom field groups)
-    # FIXED: Columns and values now match adminFieldGroups schema (image_ef1169.png)
-    # Kept fieldGroupId insertion. Added recStatus. Removed fromDate, endDate.
+  
     if form_data.get('field_groups') and len(form_data['field_groups']) > 0:
         template = Template("""INSERT INTO adminFieldGroups (
     fieldGroupId, recStatus, groupId, fieldGroupStatus, displayDivLength, displaySeq, 
@@ -149,9 +125,7 @@ INSERT INTO adminFormGroups (
             ))
         output.append("")
     
-    # 6. adminFields (new fields only)
-    # FIXED: Columns and values now match adminFields schema (image_ef11c5.png)
-    # Added recStatus. Removed fieldName, fieldStatus, endDate. Kept fromDate.
+
     if form_data.get('new_fields') and len(form_data['new_fields']) > 0:
         template = Template("""INSERT INTO adminFields (
     fieldId, recStatus, fieldType, fieldStatus, dataFieldId, remarks, fromDate, 
@@ -169,16 +143,12 @@ INSERT INTO adminFormGroups (
             ))
         output.append("")
     
-    # 7. orgPageValues
-    # FIXED: Columns and values now match orgPageValues schema (image_ef1205.jpg)
-    # Added recStatus, displayLabel, displayType, displayLength, displaySeq, transiate, validationType, fromDate.
-    # Renamed displayDivLength to displayLength. Removed endDate.
-    # Assumes client provides displayLabel, displayType, etc. in the page_values objects or they will be NULL.
+
     if form_data.get('page_values') and len(form_data['page_values']) > 0:
         template = Template("""INSERT INTO orgPageValues (
     pageId, recSeq, orgId, recStatus, groupId, fieldGroupId, fieldId, 
     displayLabel, displayType, displaySubType, displayChannel, displayDivLength, displayLanguage, displaySeq, 
-    displayDataLength, labelAlignment, required, mandatory, pageValueStatus, dependsOnValue, isRelativeTimeZone, 
+    displayDataLength, labelAlignment, required, mandatory, pageValueStatus, dependsOn, dependsOnValue, isRelativeTimeZone, 
     noWrap, isFilterable, sortable,  fromDate, helpText, defaultValue, validationType, 
     createdBy, createdOn, modifiedBy, modifiedOn
 ) VALUES (
@@ -186,15 +156,13 @@ INSERT INTO adminFormGroups (
     '{% if display_label %}{{ display_label | replace("'", "''") }}{% else %}NULL{% endif %}', 
     '{% if display_type %}{{ display_type }}{% else %}NULL{% endif %}', 'search',
     'D', 12, 'en_US', 10, 0,
-    'left', 'Y', 'Y', 'A', NULL, 0, 'Y', 
+    'left', 'Y', 'Y', 'A','', NULL, 0, 'Y', 
     NULL, NULL, '{{ today }}', '', '', 
     '{% if validation_type %}{{ validation_type }}{% else %}NULL{% endif %}', 
     'ADMIN', CURRENT_TIMESTAMP, 'ADMIN', CURRENT_TIMESTAMP
 );""")
         for idx, pv in enumerate(form_data['page_values'], 1):
-            # Note: This template now assumes pv (page_value) contains keys like 
-            # 'display_label', 'display_type', 'validation_type'
-            # If they are missing from the form_data JSON, they will be inserted as NULL.
+           
             base_data = {
                 'page_id': form_data['page_id'],
                 'org_id': form_data['org_id'],
@@ -203,18 +171,12 @@ INSERT INTO adminFormGroups (
                 'rec_seq': idx,
                 'today': today
             }
-            # Combine base data with per-field data
             render_context = {**base_data, **pv}
             output.append(template.render(render_context))
         output.append("")
     
-    # Footer
     
     return "\n".join(output)
-
-# =============================
-# EXISTING SCHEMA TOOLS
-# =============================
 
 @mcp.tool()
 def get_org_tables() -> str:
@@ -238,10 +200,6 @@ def describe_org_table(table_name: str) -> str:
             return json.dumps({"success": True, "table": table_name, "schema": rows}, indent=2, default=str)
     except Exception as e:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
-
-# =============================
-# FORM PAGE CREATION TOOLS
-# =============================
 
 @mcp.tool()
 def get_organization_by_name(legal_name: str) -> str:
@@ -303,48 +261,6 @@ def get_process_by_name(process_name: str, org_id: str) -> str:
         return json.dumps({"success": False, "error": str(e)}, indent=2)
     
 @mcp.tool()
-def debug_process_query(process_name: str, org_id: str) -> str:
-    """Debug tool to see exactly what the database returns"""
-    try:
-        with org_engine.connect() as conn:
-            # First, show all processes for this org
-            all_query = text("""
-                SELECT processId, processName, orgId
-                FROM orgProcesses 
-                WHERE orgId = :org_id
-            """)
-            all_result = conn.execute(all_query, {"org_id": org_id})
-            all_processes = [{"processId": row[0], "processName": row[1]} for row in all_result]
-            
-            # Then, search for the specific process
-            specific_query = text("""
-                SELECT processId, processName, orgId
-                FROM orgProcesses 
-                WHERE processName = :process_name 
-                AND orgId = :org_id
-            """)
-            specific_result = conn.execute(specific_query, {
-                "process_name": process_name,
-                "org_id": org_id
-            })
-            specific_row = specific_result.fetchone()
-            
-            return json.dumps({
-                "success": True,
-                "searched_for": process_name,
-                "org_id": org_id,
-                "all_processes_for_org": all_processes,
-                "found_specific": specific_row is not None,
-                "specific_result": {
-                    "processId": specific_row[0] if specific_row else None,
-                    "processName": specific_row[1] if specific_row else None,
-                    "orgId": specific_row[2] if specific_row else None
-                } if specific_row else None
-            }, indent=2)
-    except Exception as e:
-        return json.dumps({"success": False, "error": str(e)}, indent=2)
-
-@mcp.tool()
 def get_max_process_id() -> str:
     """Get the maximum processId to calculate next processId (max + 100) for new process."""
     try:
@@ -384,12 +300,10 @@ def get_events_for_process(process_id: int, org_id: str) -> str:
             result = conn.execute(query, {"process_id": process_id, "org_id": org_id})
             events = [{"eventId": row[0], "eventName": row[1], "pageId": row[2]} for row in result]
             
-            # Fix: Calculate next eventId properly
             if events:
                 max_event_id = max([e["eventId"] for e in events])
                 next_event_id = max_event_id + 1
             else:
-                # If no events exist, use processId as first eventId
                 max_event_id = None
                 next_event_id = process_id
             
@@ -418,7 +332,6 @@ def check_field_exists(field_id: str) -> str:
     """
     try:
         with org_engine.connect() as conn:
-            # Use LOWER() for case-insensitive comparison
             query = text("""
                 SELECT fieldId, dataFieldId, fieldType, displayType, validationType 
                 FROM adminFields 
@@ -448,9 +361,6 @@ def check_field_exists(field_id: str) -> str:
                 }, indent=2)
                 
     except Exception as e:
-        # CRITICAL FIX: Always return success=True even on errors
-        # This prevents the workflow from getting stuck
-        # The client should ask the user what to do when there's an error
         return json.dumps({
             "success": True,
             "found": False,
@@ -528,10 +438,6 @@ def generate_form_page_sql(form_data_json: str) -> str:
         return f"Error: Invalid JSON format - {str(e)}"
     except Exception as e:
         return f"Error generating SQL: {str(e)}"
-
-# =============================
-# NEW WORKFLOW HELPER TOOLS
-# =============================
 
 @mcp.tool()
 def validate_workflow_data(workflow_state: str) -> str:
@@ -631,10 +537,6 @@ def get_field_display_types() -> str:
         "default": "label"
     }, indent=2)
 
-# =============================
-# EXISTING UTILITY TOOLS
-# =============================
-
 @mcp.tool()
 def search_value_in_table(table_name: str, search_column: str, search_value: str) -> str:
     """Search for a specific value in a table column and return if it exists."""
@@ -685,20 +587,5 @@ def get_related_value(table_name: str, search_column: str, search_value: str, ta
 
 # Run the server
 if __name__ == "__main__":
-    print("🚀 Starting MCP Server with SSE transport on http://localhost:8000/sse")
-    print("📋 Form Page Creation Tools Available:")
-    print("   • get_organization_by_name - Get orgId from organization name")
-    print("   • get_process_by_name - Check if process exists")
-    print("   • get_max_process_id - Get next processId for new process")
-    print("   • get_events_for_process - Get events and next eventId")
-    print("   • check_field_exists - Validate field existence (case-insensitive)")
-    print("   • generate_page_url - Create pageURL from title")
-    print("   • generate_form_page_sql - Generate complete SQL statements")
-    print("   • validate_workflow_data - Validate collected data")
-    print("   • get_field_validation_types - Get validation type options")
-    print("   • get_field_display_types - Get display type options")
-    print("---")
-    print("🗑️ Other (Unused by Form Client) Tools:")
-    print("   • calculator, search_value_in_table, get_related_value")
-    print("   • get_org_tables, describe_org_table")
+    print(" Starting MCP Server with SSE transport on http://localhost:8000/sse")
     mcp.run(transport="sse", port=8000)
